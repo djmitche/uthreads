@@ -1,5 +1,5 @@
 import threading
-from uthread import *
+from uthreads import *
 
 __all__ = [
     'uWrap',

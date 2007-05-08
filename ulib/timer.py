@@ -3,7 +3,7 @@ import sys
 import time
 import types
 
-from uthread import *
+from uthreads import *
 
 __all__ = [
     'Timer',
