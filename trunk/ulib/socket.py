@@ -1,3 +1,5 @@
+# absolute imports are needed to allow 'import socket' to find 
+# the stdlib socket module, not this module
 from __future__ import absolute_import
 
 import os
@@ -9,13 +11,16 @@ import errno
 import select
 import string
 import traceback
+
 import socket as socketmodule
 
-from uthread import *
+from uthreads import *
 
 __all__ = [
-    "socket"
+    "socket", "error"
     ]
+
+error = socketmodule.error
 
 # reflect all CONSTANTS from stdlib socket module into
 # our global namespace
@@ -25,8 +30,6 @@ for sym in dir(socketmodule):
         g[sym] = socketmodule.__dict__[sym]
         __all__.append(sym)
 del g
-
-error = socketmodule.error
 
 # TODO: 
 # - timeouts on sockets

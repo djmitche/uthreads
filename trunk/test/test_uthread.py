@@ -9,8 +9,8 @@ import time
 import unittest
 from test.test_support import *
 
-import uthread
-from uthread import *
+import uthreads
+from uthreads import *
 
 _exc_in_microthread = None
 def setup():
@@ -22,18 +22,18 @@ def setup():
         global _exc_in_microthread
         _exc_in_microthread = sys.exc_info()
         current_scheduler().stop()
-    uthread.uThread._unhandled_exc = _unhandled_exc
+    uthreads.uThread._unhandled_exc = _unhandled_exc
 
 def uthreaded(*args, **kwargs):
     """
     Decorator to run the decorated function as
-    the main uthread.
+    the main uthreads.
     """
     def decorator(test):
         def wraptest(self):
             global _exc_in_microthread
             _exc_in_microthread = None
-            uthread.run(test, self, *args, **kwargs)
+            uthreads.run(test, self, *args, **kwargs)
             if _exc_in_microthread:
                 raise _exc_in_microthread[0], _exc_in_microthread[1], _exc_in_microthread[2]
         return wraptest
@@ -41,7 +41,7 @@ def uthreaded(*args, **kwargs):
 
 class uThreadTests(unittest.TestCase):
     def tearDown(self):
-        uthread.uScheduler._scheduler = None
+        uthreads.uScheduler._scheduler = None
 
     ##
     # Basic ("unit", no less) tests
