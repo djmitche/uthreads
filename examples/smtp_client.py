@@ -1,7 +1,7 @@
 # A simple, stupid SMTP client demonstrating socket operations with
 # ulib.  Does not do any error checking, etc.
 
-import uthread
+import uthreads
 from ulib import socket
 
 def client(host, helo, mailfrom, rcpttos, data):
@@ -103,7 +103,7 @@ def client(host, helo, mailfrom, rcpttos, data):
     yield s.close()
 
 def main():
-    client("localhost", "localhost", "dustin@v.igoro.us", [ "dustin@v.igoro.us" ],
+    yield client("localhost", "localhost", "dustin@v.igoro.us", [ "dustin@v.igoro.us" ],
 """From: dustin@v.igoro.us
 To: dustin@v.igoro.us
 Subject: test
@@ -111,4 +111,4 @@ Subject: test
 Hi
 """)
 
-uthread.run(main)
+uthreads.run(main)

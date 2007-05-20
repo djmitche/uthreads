@@ -3,7 +3,7 @@
 # microthreaded parallelism to check "all" of the hosts at once.
 
 from ulib import socket
-import uthread
+import uthreads
 import sys
 import re
 
@@ -50,7 +50,7 @@ def get_iprange(hostname):
 def main():
     for host in sys.argv[1:]:
         for ip in get_iprange(host):
-            yield uthread.spawn(probe_host(ip))
+            yield uthreads.spawn(probe_host(ip))
 
 if __name__ == "__main__":
-    uthread.run(main)
+    uthreads.run(main)
