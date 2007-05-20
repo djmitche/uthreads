@@ -1,0 +1,456 @@
+This document was originally shopped around the Python community as
+a PEP, but met with little enthusiasm.  However, it serves as a good
+description of the model into which uthreads is intended to fit.
+
+----
+
+PEP: XXX
+Title: Standard Microthreading Pattern
+Version: $Revision$
+Last-Modified: $Date$
+Author: Dustin J. Mitchell <dustin@cs.uchicago.edu>
+Status: Draft
+Type: Informational
+Content-Type: text/x-rst
+Created: 17-Feb-2007
+Post-History:
+
+
+Abstract
+========
+
+The extended support for generators introduced in PEP 342 [2]_
+facilitated a natural way of writing generators that cooperatively
+yield control to other functions, allowing multitasking within
+a single OS thread.  Such multitasking requires a supporting
+environment (usually in the form of a scheduler), and several such
+implementations are in active use.  Each has slightly different
+structural requirements for the task-implementing code.
+
+This PEP proposes a single, consistent pattern for such code.
+This consistency will enable microthreaded code to run in a variety
+of environments, just as threaded code can currently run atop a
+variety of OS-level threading libraries.  Compliant libraries,
+e.g., a microthreaded urllib, could then be developed, providing
+batteries-included functionality for microthreaded software.
+
+
+Definitions
+===========
+
+Within this PEP, "microthreading" is defined as interleaving
+the execution of multiple independent codepaths by cooperatively
+yielding control periodically in each codepath; a "microthread",
+then, is one such codepath.  This technique and variations on it
+have also been referred to as "weightless threads", "tasklets", and
+"greenlets".  It is a specilization of the more general event-based
+multitasking model.
+
+Microthreads are conceptually distinct from coroutines.  A coroutine
+can schedule a specific coroutine to be executed when it yields
+control, even passing a value to that coroutine.  Microthreads,
+however, simply yield to facilitate multitasking, with no knowledge
+or control of the next codepath to be executed.
+
+This PEP addresses two audiences: authors of microthreaded code
+(users) and designers of microthreaded environments (implementations).
+
+Motivation
+==========
+
+Application developers usually adopt an event-based architecture in
+order to exploit asynchronous IO facilities.  Asynchronous IO is
+ideal when the overhead of an OS-level thread for each concurrent
+IO operation is too high.
+
+An event-based architecture is also useful when an application must
+perform lightweight multitasking -- for example, an email client
+must both wait for user input and monitor mailboxes for new mail.
+Implementing this sort of multitasking using threads requires careful
+use of synchronization primitives throughout the application to
+ensure correctness.  Using common event-based techniques requires
+storing state on the heap and implementing callbacks for all state
+transitions, which can quickly become complex.
+
+A microthreaded architecture brings the best of both worlds: it
+allows users to store state in local varables, just as they would
+in a threaded implementation, while avoiding the need for complex
+synchronization primitives.  An email client, for example, can
+implement the complex state of an IMAP client in a natural fashion,
+and reflect that state using natural Python data structures with no
+need for locking.
+
+Several well-developed implementations of cooperative multitasking
+are currently available, some of which implement microthreading.
+However, each implementation approaches the subject differently,
+and it is virtually impossible to share code between implementations.
+
+This PEP is intended to bring some measure of consistency to
+microthreaded code, to facilitate development of libraries and
+implementation-agnostic code repositories to support microthreaded
+development.
+
+
+Related Work
+============
+
+Since the introduction of generators in PEP 255 [3]_ and their
+extension to support coroutines in PEP 342 [2]_, generators have
+been used to implement various forms of microthreading.
+Several implementations have been published on the web as examples:
+
+- Example 3 in PEP 342 implements a simple trampoline scheduler.
+
+- David Mertz's "Charming Python: Implementing "weightless threads"
+  with Python generators" [#Mertz]_ includes a basic microthreading
+  scheduler and suggests directions for improvement.
+
+- An ASPN recipe by Maciej Obarski [#Obarski]_ gives a simple
+  scheduler for task objects represnted by generators.
+
+In addition, several established projects implement similar
+functionality based on generators, including:
+
+- `Kiwi tasklets`_ (formerly GTasklets) use pre-PEP 342 generators
+  along with an explicit post-yield function call to retrieve any
+  incoming value or exception.
+
+- `Twisted Python`_ includes an ``inlineCallbacks`` decorator
+  [#inlineCallbacks]_ which allows a generator to yield ``Deferred``
+  objects; callback results are then re-injected with ``send()``,
+  while errbacks result in a ``throw()``.
+
+- `Kamaelia`_ includes Axon, a library supporting microprocesses which
+  multitask by yielding frequently, and interact through a
+  well-developed IPC mechanism.
+
+- `SimPy`_, a simulation engine, represents simulated processes
+  as generators.  The generators functions yield specialized
+  values to control the scheduling of the processes into a complete
+  discrete-event simulation.
+
+Stackless is not included in this list because, while it does
+implement a microthreaded environment, it does so without the use of
+generators and (as of this writing) requires a modified Python binary.
+
+
+Rationale
+=========
+
+Each of the implementations in the "Related Work" section have
+specific requirements of the microthreaded code.  The requirements
+differ enough that code written for one environment will generally
+not function properly in another.
+
+A common pattern for all microthreaded code will allow users to
+write microthreaded code that will be portable to any microthreading
+implementations which support the pattern.  This code will include
+libraries, which can then be shared more broadly.
+
+The specification in this PEP specifically avoids reference
+to any symbols not included in the built-in namespace, so
+environment-agnostic microthreaded code need not import any
+environment-specific modules.
+
+
+Implementation Specification
+============================
+
+An implementation is responsible for executing a body of code written
+by its users according to the microthreading pattern.
+
+Like a standard python thread, execution of a microthread begins with
+a call to a single function, and ends when that function completes.
+The function may call other functions, and so on; the entire control
+flow constitutes a microthread.  Completely unrelated control flows
+may be occurring simultaneously in other microthreads.
+
+Within a microthreading implementation, all microthreads operate
+within a single OS-level thread, so at most one microthread is
+executing at any point.  The implementation must not switch between
+microthreads except at times specified by the user.
+
+A microthreaded function is written as a generator function, with
+the points at which other microthreads may be executed indicated
+by ``yield``.  Normal (non-generator) functions thus cannot be
+interrupted.
+
+While a microthreaded function is executing, its execution is
+represented by a generator.  The implementation is responsible for
+ensuring that this generator has its ``next``, ``send``, and ``throw``
+methods called appropriately.  Specifically, it must call ``next`` to
+initiate processing, and ``step`` to execute each subsequent segment.
+At the completion of each segment, if the return value of ``next``,
+``send``, or ``throw`` is not one of the special values described
+below, then that value must be supplied to the generator via ``send``
+when it is next scheduled.
+
+When the generator is complete, it will raise a ``StopIteration``
+exception, which the implementation must catch and handle by either
+resuming execution of the calling function (see `Nested Function
+Calls`, below) or terminating the microthread.  Other exceptions
+must be handled as described in the `Exceptions` section, below.
+
+
+Nested Function Calls
+---------------------
+
+When a microthreaded function yields a generator, then it is invoking
+another microthreaded function, the execution of which is represented
+by the yielded generator.  Execution of the current function must be
+suspended until the new function has been executed to completion.
+Any return value from the new function must be supplied to the
+calling function via its generator's ``send`` method.
+
+Although the underlying implementation may vary, the effect is of
+a stack of generators within each microthread, with the topmost
+generator representing the state of the currently executing
+microthreaded function, and the remaining generators suspended
+awaiting its completion.
+
+
+Return Values
+-------------
+
+Microthreaded functions return values to their callers by raising
+a ``StopIteration`` exception containing the return value in
+``args[0]``.  Implementations must catch this exception and handle it
+appropriately by supplying the return value to the next generator on
+the stack via ``send``, or if there is no next generator, terminating
+the microthread.
+
+
+Exceptions
+----------
+
+When a generator raises an exception, that exception must
+be propagated to the next generator on the stack via ``throw``.
+If there is no next generator, then the implementation may display
+a traceback to the user or take other appropriate action.
+
+Implementations may adjust tracebacks to remove implementation-related
+frames, but must not alter the exception itself.
+
+
+Special Values
+--------------
+
+Implementations may attach special significance to other yielded
+values or raised exceptions, but these values and exceptions must
+be unique objects which could not be produced by code written
+with no knowledge of the implementation.  Specifically, no special
+significance may be attached to any of the built-in Python types or
+types used in the standard library.  Rather, an implementation should
+attach meaning to classes and objects local to the implementation's
+namespace.
+
+
+Thread Manipulation
+-------------------
+
+Implementations are responsible for providing any appropriate
+functionality for manipulating microthreads.  This PEP does not
+place any restrictions on such functionality.
+
+
+Pattern Specification
+=====================
+
+This section specifies the microthreading pattern from the perspective
+of a user.  In general, microthreaded code should closely resemble
+ordinary threaded code, with the addition of ``yield`` keywords at
+strategic locations.
+
+ - Microthreaded functions are written as generator functions.  Their
+   execution will not be interrupted except at statements including
+   the ``yield`` keyword.  The value of a ``yield`` expression is
+   the value of its argument, unless the argument is one of the
+   special values discussed in this section.
+
+ - A microthreaded function can call another microthreaded function by
+   yielding the generator resulting from calling the microthreaded
+   function.  The value of the ``yield`` expression is the return
+   value of the called function.
+
+ - A microthreaded function can "return" a value by raising
+   ``StopIteration`` with that value as an argument::
+
+     raise StopIteration(42)
+
+ - An exception raised in a microthreaded function will propagate
+   to its callers just as in a standard function.  Uncaught exceptions
+   will be handled in an implementation-dependent fashion.
+
+ - Functions for thread manipulation are not specified in this PEP,
+   and are implementation-dependent.
+
+
+Example
+-------
+
+This example highlights each of the aspects of the multithreaded
+pattern, utilizing a hypothetical microthreaded socket object.
+It implements an SMTP connection which simply stores the sender
+and receiver addresses, and discards the message.  A complete
+implementation of this example could serve as a honeypot SMTP server
+that would degrade gracefully under high load.
+
+::
+
+    def read_smtp_command(sock):
+        line = yield sock.readline().rstrip()
+        if ' ' in line:
+            cmd, value = line.split(' ', 1)
+        else:
+            cmd, value = line, ''
+        raise StopIteration((cmd.upper(), value))
+        
+    def send_smtp_response(sock, code, msg):
+        yield sock.send('%d %s\n', code, msg)
+
+    def read_until_dot(sock)
+        lines = []
+        while True:
+            line = yield sock.readline()
+            if line == '.\n': break
+        raise StopIteration(''.join(lines))
+        
+    def smtp_connection(sock):
+        try:
+            yield send_smtp_response(sock, '220', 'honeypot SMTP')
+            while True:
+                cmd, value = yield read_smtp_command(sock)
+                if cmd == 'HELO' or cmd == 'EHLO':
+                    yield send_smtp_response(sock, 250, 'hey there')
+                elif cmd == 'QUIT':
+                    yield send_smtp_response(sock, 221, 'see ya')
+                    yield sock.close()
+                    return
+                elif cmd == 'RCPT' or cmd == 'MAIL':
+                    extract_addresses(value)
+                    yield send_smtp_response(sock, 220, 'ok')
+                elif cmd == 'DATA':
+                    data = yield read_until_dot(sock)
+                    yield send_smtp_response(sock, 220, 'ok')
+                else:
+                    yield send_smtp_response(sock, 205, 'huh?')
+        except socket.error, e:
+            return
+
+All four functions are generator functions, the last of which calls
+the other three.  ``read_smtp_commmand`` and ``read_until_dot`` both
+use ``StopIteration`` to return values.  Any of the socket operations
+can raise an exception which will be caught by the try/except block in
+``smtp_connection``.
+
+
+Backwards Compatibility
+=======================
+
+As this is an informational PEP which makes recommendations for new
+code, no backward compatibility problems will arise from its adoption.
+
+
+Relationship to Other Projects
+==============================
+
+TBD
+
+
+Unresolved Issues
+=================
+
+Return Values
+-------------
+
+Currently, a ``return`` statement with a value in a generator is
+a syntax error.  The Python community should consider supporting
+the behavior described above in the Python compiler.  Specifically,
+the compiler would treat::
+
+    return foo
+
+in a generator as equivalent to::
+
+    raise StopIteration(foo)
+
+This change raises no backward-compatibility issues (as the former
+expression is not currently legal), but may introduce some surprising
+behavior as a function could then continue executing after a return
+statement::
+
+    try:
+        return 10
+    except StopIteration:
+        print "I'm still here!"
+
+
+Non-Microthreaded Generators
+----------------------------
+
+Functions which return "normal" generators may confuse a
+microthreading implementation if those generators are accidentally
+yielded.  Consider::
+
+    def get_constants(dict):
+        return ( k for k in dict.iterkeys() if k[0] in string.uppercase )
+
+    def examine_module(mod):
+        d = mod.__dict__
+        constants = yield get_constants(d)
+
+this example will fail, because the implementation will treat the
+generator expresion in ``get_constants`` as a microthreaded function,
+calling its ``send`` method until it is exhaustd, then assigning
+``None`` to ``constants`` in ``examine_module``.  
+
+The problem only occurs when such a generator is yielded: the
+snippet above will operate correctly if ``yield`` is removed from the
+last line.  Thus users can avoid the problem by exercising caution
+in selecting the values that are yielded.
+
+
+References
+==========
+
+.. [2] PEP 342, "Coroutines via Enhanced Generators", van Rossum, Eby
+   (http://www.python.org/dev/peps/pep-0342)
+
+.. [3] PEP 255, "Simple Generators", Schemenauer, Peters, Hetland
+   (http://www.python.org/dev/peps/pep-0255)
+
+.. _Kiwi tasklets:
+   http://www.async.com.br/projects/kiwi/api/kiwi.tasklet.html
+
+.. _Twisted Python: http://twistedmatrix.com/
+
+.. [#inlineCallbacks]
+   http://twistedmatrix.com/documents/current/api/twisted.internet.defer.html
+  
+.. _Kamaelia: http://kamaelia.sourceforge.net/
+
+.. [#Mertz] "Charming Python: Implementing 'weightless threads' with
+   Python generators," Mertz,
+   (http://www-128.ibm.com/developerworks/library/l-pythrd.html)
+
+.. [#Obarski] "simple, cooperative multitasking using generators,"
+   Obarski,
+   http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/466008
+
+.. _SimPy: http://simpy.sourceforge.net/
+
+
+Copyright
+=========
+
+This document has been placed in the public domain.
+
+
+..
+    Local Variables:
+    mode: indented-text
+    indent-tabs-mode: nil
+    sentence-end-double-space: t
+    fill-column: 70
+    coding: utf-8
+    End:
