@@ -176,14 +176,14 @@ by ``yield``.  Normal (non-generator) functions thus cannot be
 interrupted.
 
 While a microthreaded function is executing, its execution is
-represented by a generator.  The implementation is responsible for
-ensuring that this generator has its ``next``, ``send``, and ``throw``
-methods called appropriately.  Specifically, it must call ``next`` to
-initiate processing, and ``step`` to execute each subsequent segment.
-At the completion of each segment, if the return value of ``next``,
-``send``, or ``throw`` is not one of the special values described
-below, then that value must be supplied to the generator via ``send``
-when it is next scheduled.
+represented by a generator.  The implementation is responsible
+for ensuring that this generator has its ``next``, ``send``, and
+``throw`` methods called appropriately.  Specifically, it must call
+``next`` (or, equivalently, ``send(None)``) to initiate processing,
+and ``step`` to execute each subsequent segment.  At the completion of
+each segment, if the return value of ``next``, ``send``, or ``throw``
+is not one of the special values described below, then that value must
+be supplied to the generator via ``send`` when it is next scheduled.
 
 When the generator is complete, it will raise a ``StopIteration``
 exception, which the implementation must catch and handle by either
