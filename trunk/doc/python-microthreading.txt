@@ -375,14 +375,7 @@ in a generator as equivalent to::
     raise StopIteration(foo)
 
 This change raises no backward-compatibility issues (as the former
-expression is not currently legal), but may introduce some surprising
-behavior as a function could then continue executing after a return
-statement::
-
-    try:
-        return 10
-    except StopIteration:
-        print "I'm still here!"
+expression is not currently legal).  
 
 
 Non-Microthreaded Generators
