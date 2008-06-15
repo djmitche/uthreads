@@ -6,7 +6,7 @@
 import os
 import sys
 import time
-import unittest
+from twisted.trial import unittest
 import thread
 from test.test_support import *
 
@@ -204,12 +204,9 @@ class uThreadTests(unittest.TestCase):
             raise StopIteration((yield fib(n-1)) + (yield fib(n-2)))
         assert (yield fib(6)) == 13
 
-class ulibTests(unittest.TestCase):
+class sync_tests(unittest.TestCase):
     def tearDown(self):
         uthreads.uScheduler._scheduler = None
-
-    ##
-    # uthreads.sync
 
     @uthreaded()
     def test_Lock(self):
@@ -300,8 +297,9 @@ class ulibTests(unittest.TestCase):
         q = Queue()
         self.assertRaises(Empty, q.get_nowait)
 
-    ##
-    # uthreads.timer
+class timer_tests(unittest.TestCase):
+    def tearDown(self):
+        uthreads.uScheduler._scheduler = None
 
     @uthreaded()
     def test_Timer(self):
@@ -333,8 +331,9 @@ class ulibTests(unittest.TestCase):
         assert time.time() >= now + 0.2, "sleep() isn't working, so I can't test Timer"
         assert mutable != [1], "cleared timer fired"
 
-    ##
-    # uthreads.wrap
+class wrap_tests(unittest.TestCase):
+    def tearDown(self):
+        uthreads.uScheduler._scheduler = None
 
     @uthreaded()
     def test_uWrap(self):
@@ -364,8 +363,3 @@ class ulibTests(unittest.TestCase):
         assert other_ident != thread.get_ident(), "first call ran in the main thread"
         assert another_ident != thread.get_ident(), "second call ran in the main thread"
         assert other_ident != another_ident, "both calls ran in same thread"
-
-if __name__ == "__main__":
-    setup()
-    run_unittest(uThreadTests)
-    run_unittest(ulibTests)
