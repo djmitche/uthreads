@@ -8,10 +8,9 @@ if sys.version_info < (2, 5):
   sys.exit(1)
 
 setup(name='uthread',
-      version='1.0a1',
+      version='1.0a2',
       author='Dustin J. Mitchell',
       author_email='dustin@cs.uchicago.edu',
       description='Python Microthreading Library',
       url='http://code.google.com/p/uthreads',
-      py_modules=['uthreads'],
-      packages=['ulib'])
+      packages=['uthreads'])
