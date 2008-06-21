@@ -14,7 +14,7 @@ __all__ = [
     'uSleepQueue', 'uThread',
     'current_thread',
     'spawn', 'sleep',
-    'run',
+    'run', 'uthreaded'
     ]
 
 COOP_ITERS = 10
@@ -318,3 +318,26 @@ def run(callable, *args, **kwargs):
     thd.start()
 
     return d
+
+def uthreaded(fn):
+    """
+    A decorator to run the decorated function as a uthread.  Usage::
+        @uthreaded
+        def my_uthreaded_fn(remote, x, y):
+            # use microthreaded style inside the function
+            yield remote.set_x(x)
+            yield remote.set_y(y)
+            raise StopIteration(x+y)
+
+        def call_fn(remote):
+            # treat it as a function returning a deferred
+            d = my_uthreaded_fn(remote, 10, 20)
+            def print_result(res):
+                print "result: res"
+            d.addCallback(print_result)
+    """
+    def wrapper(*args, **kwargs):
+        return run(fn, *args, **kwargs)
+    wrapper.func_name = fn.func_name
+    return wrapper
+

@@ -14,13 +14,12 @@ from twisted.trial import unittest
 import uthreads
 from uthreads import *
 from uthreads.sync import *
-from uthreads.socket import *
 from uthreads.timer import *
-from uthreads.wrap import *
 
-def uthreaded(*args, **kwargs):
+def uthreaded_test(*args, **kwargs):
     """
-    Decorator to run the decorated function as a uthread.
+    Decorator to run the decorated function as a uthread, with the
+    given arguments.
     """
     def decorator(test):
         def wraptest(self):
@@ -29,7 +28,7 @@ def uthreaded(*args, **kwargs):
         return wraptest
     return decorator
 
-class basic(unittest.TestCase):
+class core(unittest.TestCase):
     def test_main(self):
         mutable = []
         def main():
@@ -40,36 +39,48 @@ class basic(unittest.TestCase):
             assert mutable == [1], "mutable is %s" % mutable
         return run(main).addCallback(check)
 
-    @uthreaded(1, z=3, y=2)
+    def test_uthreaded(self):
+        @uthreaded
+        def uthreaded_add(x, y):
+            raise StopIteration(x+y)
+
+        def checkresult(res):
+            assert res == 30
+
+        d = uthreaded_add(10, 20)
+        d.addCallback(checkresult)
+        return d
+
+    @uthreaded_test(1, z=3, y=2)
     def test_run_w_args(self, x, y, z):
         assert x == 1 and y == 2 and z == 3
         yield
 
-    @uthreaded()
+    @uthreaded_test()
     def test_run_nongenerator(self):
         pass
 
-    @uthreaded()
+    @uthreaded_test()
     def test_nested_generators(self):
         def recur(x):
             if x != 0:
                 yield recur(x-1)
         yield recur(10)
 
-    @uthreaded()
+    @uthreaded_test()
     def test_result(self):
         def foo(x):
             raise StopIteration(3 * x)
         assert (yield foo(5)) == 15
 
-    @uthreaded()
+    @uthreaded_test()
     def test_current_thread(self):
         def other_thread():
             assert current_thread() is th
             yield # make it a generator
         th = spawn(other_thread())
 
-    @uthreaded()
+    @uthreaded_test()
     def test_join1(self):
         def other_thread():
             for _ in range(10): yield
@@ -77,7 +88,7 @@ class basic(unittest.TestCase):
         th = spawn(other_thread())
         assert (yield th.join()) == 3
 
-    @uthreaded()
+    @uthreaded_test()
     def test_join2(self):
         def other_thread():
             raise StopIteration(3)
@@ -85,7 +96,7 @@ class basic(unittest.TestCase):
         for _ in range(10): yield
         assert (yield th.join()) == 3
 
-    @uthreaded()
+    @uthreaded_test()
     def test_spawn(self):
         mutable = {}
         def func(n):
@@ -97,7 +108,7 @@ class basic(unittest.TestCase):
         yield
         assert mutable[1] == 1
 
-    @uthreaded()
+    @uthreaded_test()
     def test_names(self):
         def short():
             yield
@@ -106,7 +117,7 @@ class basic(unittest.TestCase):
         th.setName('short')
         assert th.getName() == 'short'
 
-    @uthreaded()
+    @uthreaded_test()
     def test_exception(self):
         def fn_raises_RuntimeError():
             yield
@@ -118,7 +129,7 @@ class basic(unittest.TestCase):
         else:
             raise TestFailed, "exception not caught"
 
-    @uthreaded()
+    @uthreaded_test()
     def test_isAlive(self):
         mutable = [0]
         def thread_fn():
@@ -132,7 +143,7 @@ class basic(unittest.TestCase):
         yield th.join()
         assert not th.isAlive()
 
-    @uthreaded()
+    @uthreaded_test()
     def test_uThread_subclass(self):
         class MyUThread(uThread):
             def count(self, n):
@@ -146,14 +157,14 @@ class basic(unittest.TestCase):
         th.start()
         assert (yield th.join()) == 4
 
-    @uthreaded()
+    @uthreaded_test()
     def test_sleep(self):
         start = time.time()
         yield sleep(0.5)
         end = time.time()
         assert 0.25 <= (end - start) <= 0.75
 
-    @uthreaded()
+    @uthreaded_test()
     def test_multisleep(self):
         mutable = []
         def sleep_n_append(n):
@@ -174,7 +185,7 @@ class basic(unittest.TestCase):
     ##
     # More complex tests (compound functionality)
 
-    @uthreaded()
+    @uthreaded_test()
     def test_fibonacci(self):
         def fib(n):
             if n <= 1: raise StopIteration(1)
@@ -182,7 +193,7 @@ class basic(unittest.TestCase):
         assert (yield fib(6)) == 13
 
 class sync(unittest.TestCase):
-    @uthreaded()
+    @uthreaded_test()
     def test_Lock(self):
         l = Lock()
         mutable = []
@@ -212,7 +223,7 @@ class sync(unittest.TestCase):
         yield thb.join()
         assert mutable == [1,2,3,4,5], "mutable is %s" % mutable
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Lock_FIFO(self):
         # make sure the lock is FIFO when it's contended
         l = Lock()
@@ -227,7 +238,7 @@ class sync(unittest.TestCase):
         for thread in threads: yield thread.join()
         assert mutable == range(N), "mutable is %s" % mutable
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Queue(self):
         def producer(q):
             for i in range(10):
@@ -246,7 +257,7 @@ class sync(unittest.TestCase):
             yield prod.join()
             yield cons.join()
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Queue_multiconsumer(self):
         def producer(q):
             for i in range(20):
@@ -269,19 +280,19 @@ class sync(unittest.TestCase):
             for cons in consumers:
                 yield cons.join()
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Queue_put_nowait(self):
         q = Queue(1)
         q.put_nowait(0)
         self.assertRaises(Full, q.put_nowait, 1)
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Queue_gut_nowait(self):
         q = Queue()
         self.assertRaises(Empty, q.get_nowait)
 
 class timer(unittest.TestCase):
-    @uthreaded()
+    @uthreaded_test()
     def test_Timer(self):
         mutable = []
         t = Timer()
@@ -295,7 +306,7 @@ class timer(unittest.TestCase):
         assert time.time() >= now + 0.2, "sleep() isn't working, so I can't test Timer"
         assert mutable == [1], "timer didn't fire"
 
-    @uthreaded()
+    @uthreaded_test()
     def test_Timer_clear(self):
         mutable = []
         t = Timer()
