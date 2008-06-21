@@ -3,6 +3,8 @@ import sys
 import time
 import types
 
+from twisted.internet import defer, reactor
+
 from uthreads import *
 
 __all__ = [
@@ -14,25 +16,28 @@ class Timer(object):
     Schedule a microthreaded function to be called at some future time,
     in a new microthread.  Timers can be set to repeat if desired, and can
     be cancelled at any time before they have fired.
+
+    @ivar delayedcall: a delayed call object, if running; otherwise None
+    @type delayedcall: L{twisted.internet.interfaces.IDelayedCall}
+
+    @ivar generator: the generator supplied to the set function
     """
-    # TODO epydoc ivars
-    __slots__ = [ 'running', 'generator', 'timer' ]
+    __slots__ = [ 'delayedcall', 'generator' ]
     def __init__(self):
-        self.running = False
+        self.delayedcall = None
 
     def set(self, delay, generator):
         assert type(generator) is types.GeneratorType, "%r is not a generator (perhaps you used a regular function?)" % (generator,)
-        if self.running: self.clear()
+        if self.delayedcall: self.clear()
 
-        self.running = True
         self.generator = generator
-
-        self.timer = current_scheduler().monitor.callback_on_timer(time.time() + delay, self.fire)
+        self.delayedcall = reactor.callLater(delay, self.fire)
 
     def fire(self):
         spawn(self.generator)
-        self.running = False
+        self.delayedcall = None
 
     def clear(self):
-        if not self.running: return
-        current_scheduler().monitor.cancel_sleep_callback(self.timer)
+        if not self.delayedcall: return
+        self.delayedcall.cancel()
+        self.delayedcall = None

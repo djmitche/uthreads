@@ -6,9 +6,10 @@
 import os
 import sys
 import time
-from twisted.trial import unittest
 import thread
 from test.test_support import *
+from twisted.internet import defer
+from twisted.trial import unittest
 
 import uthreads
 from uthreads import *
@@ -17,47 +18,27 @@ from uthreads.socket import *
 from uthreads.timer import *
 from uthreads.wrap import *
 
-_exc_in_microthread = None
-def setup():
-    """
-    Apply monkey-patches
-    """
-    # shunt exceptions in threads on into the unittest machinery
-    def _unhandled_exc(self):
-        global _exc_in_microthread
-        _exc_in_microthread = sys.exc_info()
-        current_scheduler().stop()
-    uthreads.uThread._unhandled_exc = _unhandled_exc
-
 def uthreaded(*args, **kwargs):
     """
-    Decorator to run the decorated function as
-    the main uthreads.
+    Decorator to run the decorated function as a uthread.
     """
     def decorator(test):
         def wraptest(self):
-            global _exc_in_microthread
-            _exc_in_microthread = None
-            uthreads.run(test, self, *args, **kwargs)
-            if _exc_in_microthread:
-                raise _exc_in_microthread[0], _exc_in_microthread[1], _exc_in_microthread[2]
+            return run(test, self, *args, **kwargs)
+        wraptest.func_name = test.func_name
         return wraptest
     return decorator
 
-class uThreadTests(unittest.TestCase):
-    def tearDown(self):
-        uthreads.uScheduler._scheduler = None
-
-    ##
-    # Basic ("unit", no less) tests
-
+class basic(unittest.TestCase):
     def test_main(self):
         mutable = []
         def main():
+            yield
             mutable.append(1)
             yield
-        run(main)
-        assert mutable == [1], "mutable is %s" % mutable
+        def check(res):
+            assert mutable == [1], "mutable is %s" % mutable
+        return run(main).addCallback(check)
 
     @uthreaded(1, z=3, y=2)
     def test_run_w_args(self, x, y, z):
@@ -117,17 +98,8 @@ class uThreadTests(unittest.TestCase):
         assert mutable[1] == 1
 
     @uthreaded()
-    def test_setdaemon(self):
-        def forever():
-            while True: yield
-        th = spawn(forever())
-        th.setDaemon(True)
-        # for this test, failure == non-termination..
-
-    @uthreaded()
     def test_names(self):
         def short():
-            yield
             yield
         assert current_thread().getName() == 'main'
         th = spawn(short())
@@ -148,10 +120,15 @@ class uThreadTests(unittest.TestCase):
 
     @uthreaded()
     def test_isAlive(self):
+        mutable = [0]
         def thread_fn():
-            yield
+            # a busy-loop is inefficient, but exercises minimal
+            # other functionality
+            while not mutable[0]:
+                yield
         th = spawn(thread_fn())
         assert th.isAlive()
+        mutable[0] = 1
         yield th.join()
         assert not th.isAlive()
 
@@ -204,10 +181,7 @@ class uThreadTests(unittest.TestCase):
             raise StopIteration((yield fib(n-1)) + (yield fib(n-2)))
         assert (yield fib(6)) == 13
 
-class sync_tests(unittest.TestCase):
-    def tearDown(self):
-        uthreads.uScheduler._scheduler = None
-
+class sync(unittest.TestCase):
     @uthreaded()
     def test_Lock(self):
         l = Lock()
@@ -215,19 +189,28 @@ class sync_tests(unittest.TestCase):
         def a():
             yield l.acquire()
             mutable.append(1)
-            l.release()
+            yield sleep(0.15)
+            mutable.append(2)
+            yield l.release()
+
             yield l.acquire()
             mutable.append(5)
-            l.release()
+            yield l.release()
+
         def b():
+            yield sleep(0.1)
+
             yield l.acquire()
             mutable.append(3)
-            l.release()
+            yield sleep(0.1)
+            mutable.append(4)
+            yield l.release()
+
         tha = spawn(a())
         thb = spawn(b())
         yield tha.join()
         yield thb.join()
-        assert mutable == [1,3,5], "mutable is %s" % mutable
+        assert mutable == [1,2,3,4,5], "mutable is %s" % mutable
 
     @uthreaded()
     def test_Lock_FIFO(self):
@@ -297,10 +280,7 @@ class sync_tests(unittest.TestCase):
         q = Queue()
         self.assertRaises(Empty, q.get_nowait)
 
-class timer_tests(unittest.TestCase):
-    def tearDown(self):
-        uthreads.uScheduler._scheduler = None
-
+class timer(unittest.TestCase):
     @uthreaded()
     def test_Timer(self):
         mutable = []
@@ -330,36 +310,3 @@ class timer_tests(unittest.TestCase):
         yield sleep(0.3)
         assert time.time() >= now + 0.2, "sleep() isn't working, so I can't test Timer"
         assert mutable != [1], "cleared timer fired"
-
-class wrap_tests(unittest.TestCase):
-    def tearDown(self):
-        uthreads.uScheduler._scheduler = None
-
-    @uthreaded()
-    def test_uWrap(self):
-        import thread
-        dec = uWrap()
-
-        @dec
-        def run_me_in_another_thread():
-            return thread.get_ident()
-
-        other_ident = ( yield run_me_in_another_thread() )
-        assert other_ident != thread.get_ident(), "function ran in the main thread"
-
-    @uthreaded()
-    def test_uWrap_multi(self):
-        dec = uWrap()
-        @dec
-        def run_me_in_another_thread():
-            time.sleep(0.1)
-            return thread.get_ident()
-
-        # this is unrealistically silly, but there you are..
-        th1 = yield spawn(run_me_in_another_thread())
-        th2 = yield spawn(run_me_in_another_thread())
-        other_ident = yield th1.join()
-        another_ident = yield th2.join()
-        assert other_ident != thread.get_ident(), "first call ran in the main thread"
-        assert another_ident != thread.get_ident(), "second call ran in the main thread"
-        assert other_ident != another_ident, "both calls ran in same thread"
