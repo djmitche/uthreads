@@ -130,6 +130,35 @@ class core(unittest.TestCase):
             raise TestFailed, "exception not caught"
 
     @uthreaded_test()
+    def test_multilevel_exception(self):
+        def fn_raises_assertion():
+            yield
+            assert False, "nuh uh"
+
+        def innocent_fn():
+            yield 13
+            yield fn_raises_assertion()
+
+        try:
+            yield innocent_fn()
+        except AssertionError:
+            pass
+        else:
+            raise TestFailed, "exception not caught"
+
+    @uthreaded_test()
+    def test_errback(self):
+        def twisted_failure():
+            return defer.fail(RuntimeError())
+
+        try:
+            yield twisted_failure()
+        except RuntimeError:
+            pass
+        else:
+            raise TestFailed, "exception not caught"
+
+    @uthreaded_test()
     def test_isAlive(self):
         mutable = [0]
         def thread_fn():
