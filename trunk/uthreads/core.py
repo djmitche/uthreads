@@ -274,7 +274,15 @@ class uThread(object):
                     self._step()
                 def nextstep_eb(f):
                     if isinstance(f, failure.Failure):
-                        exc_info = (f.type, f.value, f.getTracebackObject())
+                        # getting the traceback object is a bit tricky in Twisted
+                        if hasattr(f, 'getTracebackObject'):
+                            exc_info = (f.type, f.value, f.getTracebackObject())
+                        elif hasattr(f, 'tb'):
+                            exc_info = (f.type, f.value, f.tb)
+                        else:
+                            exc_info = (f.type, f.value, None)
+                    else:
+                        exc_info = (type(f), f, None) # TODO: is this right? can it happen?
                     self._stepfn = self._stack[-1].throw
                     self._stepargs = exc_info
                     self._step()
