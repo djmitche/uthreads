@@ -130,6 +130,20 @@ class core(unittest.TestCase):
             raise TestFailed, "exception not caught"
 
     @uthreaded_test()
+    def test_uthread_exception(self):
+        def fn_raises_RuntimeError():
+            yield sleep(0.1)
+            raise RuntimeError
+
+        th = spawn(fn_raises_RuntimeError())
+        try:
+            yield th.join()
+        except RuntimeError:
+            pass
+        else:
+            raise TestFailed, "exception not caught"
+
+    @uthreaded_test()
     def test_multilevel_exception(self):
         def fn_raises_assertion():
             yield
