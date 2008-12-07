@@ -8,7 +8,7 @@ import traceback
 import threading
 
 from twisted.internet import defer, reactor
-from twisted.python import failure
+from twisted.python import failure, log
 
 __all__ = [
     'uSleepQueue', 'uThread',
@@ -195,6 +195,9 @@ class uThread(object):
             self._state = self.FINISHED
             if self._join_sleepq:
                 self._join_sleepq.throw(failure.Failure())
+            else:
+                # TODO: trim traceback down to here
+                log.err()
         else:
             self._state = self.FINISHED
             if self._join_sleepq:
