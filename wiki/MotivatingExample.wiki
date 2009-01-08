@@ -1,0 +1,30 @@
+#summary Motivating Example
+
+This is an example I (Dustin) used in a mini-talk at http://zpugdc.org/ on January 7, 2009.
+
+= Example =
+The example application is a fictional interactive support system for the Zune.  It accepts tcp connections (e.g., via telnet) on port 1025 and interacts to synergize the customer's value-add (or whatever).
+
+== Threaded ==
+The first example, [http://code.google.com/p/uthreads/source/browse/trunk/examples/support-threaded.py support-threaded.py], is a threaded version of this code.  It follows a pretty standard model: the main thread listens for incoming connections and spawns a thread on each new connection; when input is required, that thread blocks awaiting input from the socket.  There are conditionals and loops embedded in the threaded function (`handle_connection`) which are easy to read and understand in this form.
+
+== Twisted ==
+Now, everyone knows that thread-per-socket servers are not very scalable, and a common alternative is asynchronous programming.  In the Python world, that means [http://twistedmatrix.com/ Twisted].  The next example, [http://code.google.com/p/uthreads/source/browse/trunk/examples/support-twisted.py support-twisted.py], shows the same application written in Twisted.  Because Twisted uses Deferreds and callbacks, we have to implement the conditionals and loops as a state machine.  Twisted's [http://twistedmatrix.com/trac/wiki/DeferredGenerator DeferredGenerator] is also an option, but the extra verbage of creating a `waitForDeferred` object, yielding it, and then calling its `getResult` (even when you don't care what the result is!) makes this a fairly unappealing option for development of larger applications
+
+== µThreaded ==
+This is the problem uthreads is designed to solve.  The third example, [http://code.google.com/p/uthreads/source/browse/trunk/examples/support-uthreaded.py support-uthreaded.py], again implements the Zune support system.  Note that this code is much more similar to `support-threaded.py` than to `support-twisted.py`.  Where the threaded version blocked, this version calls `yield`, e.g.,
+{{{
+        name = (yield self.getLine()).strip()
+}}}
+using the yield expression introduced in [http://www.python.org/dev/peps/pep-0342/ PEP-342] and available in Python-2.5.  The uthreads library also provides a `Thread`-like class, `uThread`, so the example creates a new `uThread` for each incoming connection:
+{{{
+    def connectionMade(self):
+        uthreads.spawn(self.handleConnection())
+}}}
+The library also provides a number of convenience methods you might expect, e.g., `sleep`:
+{{{
+            yield uthreads.sleep(1)
+}}}
+
+= Conclusion =
+The lesson to take from this example is that `uthreads` lets you write asynchronous applications, either for efficiency and scalability, but still express your algorithms in a familiar, readable form.  The library is sufficiently flexible that it can be applied only where necessary within your application, with the simpler parts of the application using the regular Twisted mechanisms.
