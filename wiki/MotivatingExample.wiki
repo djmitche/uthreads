@@ -1,4 +1,5 @@
 #summary Motivating Example
+#labels Featured
 
 This is an example I (Dustin) used in a mini-talk at http://zpugdc.org/ on January 7, 2009.
 
