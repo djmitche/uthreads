@@ -1,0 +1,59 @@
+#summary The µThreads API
+#labels Featured
+
+= Introduction =
+
+µThreads implements the StandardMicrothreadingPattern within [http://twistedmatrix.com/ Twisted Python].  You should be familiar with both before reading this document.
+
+<wiki:toc max_depth="3" />
+
+= Interacting with Twisted =
+A µthreaded function may interact with Twisted in two ways: it may call functions which return `Deferred` objects, on which it wishes to block; and its caller may expect it to return a `Deferred` object.
+
+In the first, case, a µthreaded function may simply yield such a `Deferred` object to block on it.  When the `Deferred` is called back, the yield expression will return the `Deferred` object's result.  If an error occurs, an exception will be raised, just as you would expect.  Note that this particular trick avoids the need to use `maybeDeferred`, since yielding a normal Python object just returns that object (unless it is a generator).
+
+{{{
+from twisted.web.client import getPage
+def follow_links(url, depth):
+    if depth == 0: return
+    page = yield getPage(url)
+    if not yield have_page(url, page):
+        for link in extract_links(page):
+            yield follow_links(link, depth-1)
+}}}
+
+In the second, case a µthreaded function should return a `Deferred` object.  This is accomplished by decorating the function with `uthreads.returns_deferred`:
+{{{
+from uthreads import returns_deferred
+@returns_deferred
+def authenticate_client(username, password):
+    if not username or not password:
+        raise StopIteration(False)
+    raise StopIteration(yield auth_server.callRemote("check_creds", username, password)):
+}}}
+
+
+
+= Bug-prevention =
+One of the easiest mistakes to make when writing µthreaded programs is to forget a `yield`:
+{{{
+    if not have_page(url, page): # WRONG
+        # ...
+}}}
+The effect of this error is as if `have_page` had never been called -- no traceback is generated, and in this case it will appear to `follow_links` that `have_page` always returns true.  The problem is that `have_page(..)` returns a generator object without executing any code.  Rather than return this generator object to the µthreads scheduler, `follow_links` only tests for its truthiness, so none of the code in `have_page` is ever executed.
+
+Detecting this is made a bit easier by decorating every µthreaded function with `@uthreaded`:
+{{{
+from uthreads import uthreaded
+@uthreaded
+def have_page(url, page):
+    # ...
+}}}
+
+This decorator has no effect on the operation of the function (and in fact does nothing when compiled with -O), but adds a wrapper that will detect this "lost" generator and produce an exception:
+{{{
+File "/home/dustin/devel/projects/uthreads/t/trunk/uthreads/core.py", line 325, in _generator_seen
+    % (last_obj_ref(), last_fn))
+exceptions.RuntimeError: None, result of <function have_page at 0x6caaa0>, was not yielded to the scheduler
+}}}
+this feature depends on some Python trickery, and is under development.  Note that the traceback does not indicate the location of the missing `yield`, but at least hints as to which function's generator was discarded.
