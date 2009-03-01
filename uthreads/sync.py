@@ -1,9 +1,11 @@
+from __future__ import absolute_import
+
 import os
 import sys
 from Queue import Empty, Full
 from collections import deque
 
-from uthreads import *
+from .core import uSleepQueue
 
 __all__ = [
     'Lock',

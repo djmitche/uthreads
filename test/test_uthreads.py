@@ -30,6 +30,7 @@ def uthreaded_test(*args, **kwargs):
 class core(unittest.TestCase):
     def test_main(self):
         mutable = []
+        @uthreaded
         def main():
             yield
             mutable.append(1)
@@ -38,8 +39,8 @@ class core(unittest.TestCase):
             assert mutable == [1], "mutable is %s" % mutable
         return run(main).addCallback(check)
 
-    def test_uthreaded(self):
-        @uthreaded
+    def test_returns_deferred(self):
+        @returns_deferred
         def uthreaded_add(x, y):
             raise StopIteration(x+y)
 
@@ -61,6 +62,7 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_nested_generators(self):
+        @uthreaded
         def recur(x):
             if x != 0:
                 yield recur(x-1)
@@ -74,14 +76,18 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_current_thread(self):
+        th = None
+        @uthreaded
         def other_thread():
-            yield sleep(0.1)
+            # wait until th is set, the hard way
+            while th is None:
+                yield
             assert current_thread() is th
         th = spawn(other_thread())
-        yield th.join()
 
     @uthreaded_test()
     def test_join1(self):
+        @uthreaded
         def other_thread():
             for _ in range(10): yield
             raise StopIteration(3)
@@ -90,6 +96,7 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_join2(self):
+        @uthreaded
         def other_thread():
             raise StopIteration(3)
         th = spawn(other_thread())
@@ -99,6 +106,7 @@ class core(unittest.TestCase):
     @uthreaded_test()
     def test_spawn(self):
         mutable = {}
+        @uthreaded
         def func(n):
             for _ in range(n): yield
             mutable[1] = 2
@@ -110,6 +118,7 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_names(self):
+        @uthreaded
         def short():
             yield
         assert current_thread().getName() == 'main'
@@ -119,6 +128,7 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_exception(self):
+        @uthreaded
         def fn_raises_RuntimeError():
             yield
             raise RuntimeError
@@ -127,10 +137,11 @@ class core(unittest.TestCase):
         except RuntimeError:
             pass
         else:
-            raise TestFailed, "exception not caught"
+            raise unittest.TestFailed, "exception not caught"
 
     @uthreaded_test()
     def test_uthread_exception(self):
+        @uthreaded
         def fn_raises_RuntimeError():
             yield sleep(0.1)
             raise RuntimeError
@@ -141,14 +152,33 @@ class core(unittest.TestCase):
         except RuntimeError:
             pass
         else:
-            raise TestFailed, "exception not caught"
+            raise unittest.TestFailed, "exception not caught"
+
+    @uthreaded_test()
+    def test_uthread_immediate_exception(self):
+        @uthreaded
+        def other_thread():
+            yield # make it a generator
+            raise RuntimeError
+        th = spawn(other_thread())
+
+        yield sleep(0.1)
+        assert not th.isAlive(), "thread should have finished already"
+        try:
+            yield th.join()
+        except RuntimeError:
+            pass
+        else:
+            raise unittest.TestFailed, "exception not caught"
 
     @uthreaded_test()
     def test_multilevel_exception(self):
+        @uthreaded
         def fn_raises_assertion():
             yield
             assert False, "nuh uh"
 
+        @uthreaded
         def innocent_fn():
             yield 13
             yield fn_raises_assertion()
@@ -158,7 +188,7 @@ class core(unittest.TestCase):
         except AssertionError:
             pass
         else:
-            raise TestFailed, "exception not caught"
+            raise unittest.TestFailed, "exception not caught"
 
     @uthreaded_test()
     def test_errback(self):
@@ -170,11 +200,12 @@ class core(unittest.TestCase):
         except RuntimeError:
             pass
         else:
-            raise TestFailed, "exception not caught"
+            raise unittest.TestFailed, "exception not caught"
 
     @uthreaded_test()
     def test_isAlive(self):
         mutable = [0]
+        @uthreaded
         def thread_fn():
             # a busy-loop is inefficient, but exercises minimal
             # other functionality
@@ -189,9 +220,11 @@ class core(unittest.TestCase):
     @uthreaded_test()
     def test_uThread_subclass(self):
         class MyUThread(uThread):
+            @uthreaded
             def count(self, n):
                 for _ in range(n): yield
 
+            @uthreaded
             def run(self):
                 yield self.count(5)
                 raise StopIteration(4)
@@ -210,6 +243,7 @@ class core(unittest.TestCase):
     @uthreaded_test()
     def test_multisleep(self):
         mutable = []
+        @uthreaded
         def sleep_n_append(n):
             current_thread().setName("sna(%s)" % n)
             yield sleep(n / 4.0 + 1)
@@ -230,6 +264,7 @@ class core(unittest.TestCase):
 
     @uthreaded_test()
     def test_fibonacci(self):
+        @uthreaded
         def fib(n):
             if n <= 1: raise StopIteration(1)
             raise StopIteration((yield fib(n-1)) + (yield fib(n-2)))
@@ -240,6 +275,7 @@ class sync(unittest.TestCase):
     def test_Lock(self):
         l = Lock()
         mutable = []
+        @uthreaded
         def a():
             yield l.acquire()
             mutable.append(1)
@@ -251,6 +287,7 @@ class sync(unittest.TestCase):
             mutable.append(5)
             yield l.release()
 
+        @uthreaded
         def b():
             yield sleep(0.1)
 
@@ -271,6 +308,7 @@ class sync(unittest.TestCase):
         # make sure the lock is FIFO when it's contended
         l = Lock()
         mutable = []
+        @uthreaded
         def do_append(n):
             for _ in range(n): yield
             yield l.acquire()
@@ -283,9 +321,11 @@ class sync(unittest.TestCase):
 
     @uthreaded_test()
     def test_Queue(self):
+        @uthreaded
         def producer(q):
             for i in range(10):
                 yield q.put(i) 
+        @uthreaded
         def consumer(q):
             for i in range(10):
                 for _ in range(30): yield # stall for a while
@@ -302,9 +342,11 @@ class sync(unittest.TestCase):
 
     @uthreaded_test()
     def test_Queue_multiconsumer(self):
+        @uthreaded
         def producer(q):
             for i in range(20):
                 yield q.put(i)
+        @uthreaded
         def consumer(q):
             items = [ (yield q.get()) for _ in range(5) ]
 
@@ -339,10 +381,13 @@ class timer(unittest.TestCase):
     def test_Timer(self):
         mutable = []
         t = Timer()
+
+        @uthreaded
         def timesup(mut):
             yield
             mut.append(1)
         t.set(0.1, timesup(mutable))
+
         assert mutable != [1], "timer fired too early"
         now = time.time()
         yield sleep(0.3)
@@ -353,10 +398,13 @@ class timer(unittest.TestCase):
     def test_Timer_clear(self):
         mutable = []
         t = Timer()
+
+        @uthreaded
         def timesup(mut):
             yield
             mut.append(1)
         t.set(0.1, timesup(mutable))
+
         assert mutable != [1], "timer fired too early"
         yield
         t.clear()

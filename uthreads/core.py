@@ -7,6 +7,8 @@ import select
 import traceback
 import threading
 
+if __debug__: import weakref
+
 from twisted.internet import defer, reactor
 from twisted.python import failure, log
 
@@ -14,7 +16,8 @@ __all__ = [
     'uSleepQueue', 'uThread',
     'current_thread',
     'spawn', 'sleep',
-    'run', 'uthreaded'
+    'run',
+    'returns_deferred', 'uthreaded'
     ]
 
 COOP_ITERS = 10
@@ -109,6 +112,10 @@ class uThread(object):
         self._join_sleepq = None
         self._sleep_sleepq = None
 
+    # support for the @uthreaded decorator's debugging data
+    if __debug__:
+        last_uthreaded_return = None
+
     def __repr__(self):
         return "<%s %r at 0x%x>" % (self.__class__.__name__, self.name, id(self))
 
@@ -158,10 +165,11 @@ class uThread(object):
           # wait until worker has finished
           yield worker.join()
         """
-        # TODO: will errback on unhandled exception; do the same with
-        # already-finished threads
         if self._state == self.FINISHED: 
-            return self._result
+            if self._result[0]:
+                return self._result[1]
+            else:
+                raise self._result[1][0], self._result[1][1], self._result[1][2]
 
         # invent a _join_sleepq if necessary
         if not self._join_sleepq:
@@ -190,18 +198,20 @@ class uThread(object):
     # TODO: remove
     def _toplevel(self):
         try:
-            self._result = yield self.run()
+            self._result = (True, (yield self.run()))
         except:
+            # TODO: trim traceback down to here
             self._state = self.FINISHED
+            self._result = (False, sys.exc_info())
             if self._join_sleepq:
                 self._join_sleepq.throw(failure.Failure())
             else:
-                # TODO: trim traceback down to here
-                log.err()
+                log.msg("Possible uncaught exception in uThread: %r" % (self._result[1][1],))
+                # TODO: handle this when the uThread is GC'd?
         else:
             self._state = self.FINISHED
             if self._join_sleepq:
-                self._join_sleepq.wake(self._result)
+                self._join_sleepq.wake(self._result[1])
 
     def _step(self):
         global _current_thread
@@ -245,6 +255,8 @@ class uThread(object):
                 tb = tb.tb_next
                 self._stepargs = (cl, ex, tb)
             else:
+                if __debug__:
+                    uThread._generator_seen(stepresult)
                 if type(stepresult) is types.GeneratorType:
                     # starting a nested generator
                     self._stack.append(stepresult)
@@ -279,11 +291,18 @@ class uThread(object):
                     if isinstance(f, failure.Failure):
                         # getting the traceback object is a bit tricky in Twisted
                         if hasattr(f, 'getTracebackObject'):
-                            exc_info = (f.type, f.value, f.getTracebackObject())
+                            tb = f.getTracebackObject()
                         elif hasattr(f, 'tb'):
-                            exc_info = (f.type, f.value, f.tb)
+                            tb = f.tb
                         else:
-                            exc_info = (f.type, f.value, None)
+                            tb = None
+                        # Twisted has a tendency to call "cleanFailure" too much; this
+                        # throws out the original Python traceback and substitutes a
+                        # "fake" traceback, which won't fool throw().  Such is life with
+                        # Twisted.
+                        if tb is not None and not isinstance(tb, types.TracebackType):
+                            tb = None
+                        exc_info = (f.type, f.value, tb)
                     else:
                         exc_info = (type(f), f, None) # TODO: is this right? can it happen?
                     self._stepfn = self._stack[-1].throw
@@ -292,7 +311,19 @@ class uThread(object):
                 sleep_d.addCallbacks(nextstep_cb, nextstep_eb)
                 break
 
-# TODO: is this needed?
+    if __debug__:
+        @staticmethod
+        def _generator_seen(yielded):
+            """Utility function to check that no generators have been missed"""
+            if uThread.last_uthreaded_return is None: return
+            last_obj_ref, last_fn = uThread.last_uthreaded_return
+            if last_obj_ref() is yielded:
+                uThread.last_uthreaded_return = None # we got the object we were supposed to get
+            else:
+                # must have missed this object somehow
+                raise RuntimeError("%r, result of %r, was not yielded to the scheduler"
+                                  % (last_obj_ref(), last_fn))
+
 global _current_thread
 def current_thread():
     return _current_thread
@@ -303,6 +334,11 @@ def spawn(generator):
     This is most often called like this::
       worker_thread = uthreads.spawn(worker(datum1, datum2))
     """
+    # make sure uThread "sees" GENERATOR, lest it think someone forgot
+    # to yield it
+    if __debug__:
+        uThread._generator_seen(generator)
+
     thd = uThread(target=lambda : generator)
     thd.start()
     return thd
@@ -330,10 +366,13 @@ def run(callable, *args, **kwargs):
 
     return d
 
-def uthreaded(fn):
+## decorators
+
+def returns_deferred(fn):
     """
-    A decorator to run the decorated function as a uthread.  Usage::
-        @uthreaded
+    A decorator which makes the underlying microthreaded function return a
+    Deferred.  Used to interface microthreaded functions to Twisted.  Usage::
+        @returns_deferred
         def my_uthreaded_fn(remote, x, y):
             # use microthreaded style inside the function
             yield remote.set_x(x)
@@ -352,3 +391,40 @@ def uthreaded(fn):
     wrapper.func_name = fn.func_name
     return wrapper
 
+def uthreaded(fn):
+    """
+    A decorator to signal that the decorated function is microthreaded, and
+    should be called within a C{yield} expression.  If __debug__ is False, this
+    doesn't do much of anything.  Otherwise, when the function is called, it
+    checks that it does, indeed, return a generator, and that the generator
+    makes it back to the uthread scheduler, helping to avoid errors where
+    microthreaded functions are accidentally called without C{yield}.
+    """
+    if not __debug__: return fn
+    def wrapper(*args, **kwargs):
+        obj = fn(*args, **kwargs)
+
+        # if the function is not actually uThreaded, then there's nothing to worry
+        # about.  The object is probably referenced from other places, so our weakref
+        # trick is unlikely to work.
+        if not isinstance(obj, types.GeneratorType):
+            return obj
+
+        # if the last object returned from a @uthreaded function has not yet been
+        # seen (and set to None) by the scheduler, then we have a problem.
+        if uThread.last_uthreaded_return is not None:
+            last_obj_ref, last_fn = uThread.last_uthreaded_return
+            raise RuntimeError("%r, result of %r, was not yielded to the scheduler"
+                              % (last_obj_ref(), last_fn))
+
+        # add a weakref to this object; if the calling function immediately discards it,
+        # which is the most common error, then this callback will detect the error.
+        def early_unref(ref):
+            raise TypeError("generator from %r was not yielded to the scheduler" % fn)
+        obj_ref = weakref.ref(obj, callback=early_unref)
+        uThread.last_uthreaded_return = (obj_ref, fn)
+        return obj
+
+    wrapper.func_name = fn.func_name
+    wrapper.func_doc = fn.func_doc
+    return wrapper
