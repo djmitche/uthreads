@@ -11,7 +11,7 @@
 
 Any application written with `uthreads` is likely to mix normal twisted python with microthreaded python.  Authors will avoid much confusion by keeping clear about which style applies at each line of code.  The `@uthreaded` decorator (explained below) is helpful as a visual reminder that the decorated function is microthreaded.
 
-= ÂµThreads =
+= µThreads =
 The `uthreads.uThread` class is designed to act like Python's `threading.  Its constructor takes keyword arguments `target`, `args`, and `kwargs`, and `name`, just like `Threads`'s constructor.  Note that the `group` argument is not supported.  A thread object `uth` has methods
  * `uth.getName`
  * `uth.setName`
