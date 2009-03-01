@@ -16,8 +16,8 @@ __all__ = [
 class Timer(object):
     """
     Schedule a microthreaded function to be called at some future time,
-    in a new microthread.  Timers can be set to repeat if desired, and can
-    be cancelled at any time before they have fired.
+    in a new microthread.  Timers can be cancelled at any time before they
+    have fired.
 
     @ivar delayedcall: a delayed call object, if running; otherwise None
     @type delayedcall: L{twisted.internet.interfaces.IDelayedCall}
