@@ -7,7 +7,6 @@ import os
 import sys
 import time
 import thread
-from test.test_support import *
 from twisted.internet import defer
 from twisted.trial import unittest
 
@@ -76,9 +75,10 @@ class core(unittest.TestCase):
     @uthreaded_test()
     def test_current_thread(self):
         def other_thread():
+            yield sleep(0.1)
             assert current_thread() is th
-            yield # make it a generator
         th = spawn(other_thread())
+        yield th.join()
 
     @uthreaded_test()
     def test_join1(self):
