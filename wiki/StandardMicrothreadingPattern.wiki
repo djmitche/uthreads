@@ -4,7 +4,7 @@
 
 = Abstract =
 
-The extended support for generators introduced in PEP 342 [2]_ facilitated a natural way of writing generators that cooperatively yield control to other functions, allowing multitasking within a single OS thread.  Such multitasking requires a supporting environment (usually in the form of a scheduler), and several such implementations are in active use.  Each has slightly different structural requirements for the task-implementing code.
+The extended support for generators introduced in PEP 342 facilitated a natural way of writing generators that cooperatively yield control to other functions, allowing multitasking within a single OS thread.  Such multitasking requires a supporting environment (usually in the form of a scheduler), and several such implementations are in active use.  Each has slightly different structural requirements for the task-implementing code.
 
 This PEP proposes a single, consistent pattern for such code.  This consistency will enable microthreaded code to run in a variety of environments, just as threaded code can currently run atop a variety of OS-level threading libraries.  Compliant libraries, e.g., a microthreaded urllib, could then be developed, providing batteries-included functionality for microthreaded software.
 
@@ -40,7 +40,7 @@ Since the introduction of generators in [http://www.python.org/dev/peps/pep-0255
 In addition, several established projects implement similar functionality based on generators, including:
 
  * [http://www.async.com.br/projects/kiwi/api/kiwi.tasklet.html Kiwi tasklets] (formerly GTasklets) use pre-PEP 342 generators along with an explicit post-yield function call to retrieve any incoming value or exception.
- * [http://twistedmatrix.com/ Twisted Python] includes an `inlineCallbacks` decorator [#inlineCallbacks]_ which allows a generator to yield `Deferred` objects; callback results are then re-injected with `send()`, while errbacks result in a `throw()`.
+ * [http://twistedmatrix.com/ Twisted Python] includes an [http://blog.mekk.waw.pl/archives/14-Twisted-inlineCallbacks-and-deferredGenerator.html inlineCallbacks] decorator which allows a generator to yield `Deferred` objects; callback results are then re-injected with `send()`, while errbacks result in a `throw()`.
  * [http://kamaelia.sourceforge.net/ Kamaelia] includes Axon, a library supporting microprocesses which multitask by yielding frequently, and interact through a well-developed IPC mechanism.
  * [http://simpy.sourceforge.net/ SimPy], a simulation engine, represents simulated processes as generators.  The generators functions yield specialized values to control the scheduling of the processes into a complete discrete-event simulation.
 
@@ -96,14 +96,14 @@ Implementations are responsible for providing any appropriate functionality for 
 
 This section specifies the microthreading pattern from the perspective of a user.  In general, microthreaded code should closely resemble ordinary threaded code, with the addition of `yield` keywords at strategic locations.
 
-* Microthreaded functions are written as generator functions.  Their execution will not be interrupted except at statements including the `yield` keyword.  The value of a `yield` expression is the value of its argument, unless the argument is one of the special values discussed in this section.
-* A microthreaded function can call another microthreaded function by yielding the generator resulting from calling the microthreaded function.  The value of the `yield` expression is the return value of the called function.
-* A microthreaded function can "return" a value by raising `!StopIteration` with that value as an argument:
+ * Microthreaded functions are written as generator functions.  Their execution will not be interrupted except at statements including the `yield` keyword.  The value of a `yield` expression is the value of its argument, unless the argument is one of the special values discussed in this section.
+ * A microthreaded function can call another microthreaded function by yielding the generator resulting from calling the microthreaded function.  The value of the `yield` expression is the return value of the called function.
+ * A microthreaded function can "return" a value by raising `!StopIteration` with that value as an argument:
 {{{
 	raise StopIteration(42)
 }}}
-* An exception raised in a microthreaded function will propagate to its callers just as in a standard function.  Uncaught exceptions will be handled in an implementation-dependent fashion.
-* Functions for thread manipulation are not specified in this PEP, and are implementation-dependent.
+ * An exception raised in a microthreaded function will propagate to its callers just as in a standard function.  Uncaught exceptions will be handled in an implementation-dependent fashion.
+ * Functions for thread manipulation are not specified in this PEP, and are implementation-dependent.
 
 == Example ==
 
