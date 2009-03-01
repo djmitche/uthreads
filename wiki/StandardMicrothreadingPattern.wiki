@@ -1,4 +1,4 @@
-﻿#featured
+﻿#labels Featured
 This document was originally shopped around the Python community as a PEP, but met with little enthusiasm.  However, it serves as a good description of the model into which uthreads is intended to fit.
 
 <wiki:toc max_depth="3" />
