@@ -16,14 +16,17 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License (GPL)",
     "Programming Language :: Python",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    'Development Status :: 4 - Beta',
 ]
 setup(name='uthreads',
       version='1.0',
       author='Dustin J. Mitchell',
-      author_email='dustin@cs.uchicago.edu',
+      author_email='dustin@v.igoro.us',
       description='Python Microthreading Library',
+      long_description=open("README.txt").read(),
       url='http://code.google.com/p/uthreads',
       classifiers=classifiers,
+      license="GPLv2",
 
       packages=['uthreads'],
       include_package_data = True,
