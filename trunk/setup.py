@@ -26,6 +26,7 @@ setup(name='uthreads',
       classifiers=classifiers,
 
       packages=['uthreads'],
+      include_package_data = True,
       zip_safe=True,
 
       test_suite="test",
