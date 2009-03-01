@@ -25,6 +25,7 @@ setup(name='uthreads',
       description='Python Microthreading Library',
       long_description=open("README.txt").read(),
       url='http://code.google.com/p/uthreads',
+      download_url='http://code.google.com/p/uthreads/downloads/list',
       classifiers=classifiers,
       license="GPLv2",
 
