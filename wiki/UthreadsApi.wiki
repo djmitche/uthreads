@@ -1,4 +1,4 @@
-#summary The µThreads API
+﻿#summary The µThreads API
 #labels Featured
 
 = Introduction =
@@ -6,6 +6,81 @@
 µThreads implements the StandardMicrothreadingPattern within [http://twistedmatrix.com/ Twisted Python].  You should be familiar with both before reading this document.
 
 <wiki:toc max_depth="3" />
+
+= General Guidelines =
+
+Any application written with `uthreads` is likely to mix normal twisted python with microthreaded python.  Authors will avoid much confusion by keeping clear about which style applies at each line of code.  The `@uthreaded` decorator (explained below) is helpful as a visual reminder that the decorated function is microthreaded.
+
+= ÂµThreads =
+The `uthreads.uThread` class is designed to act like Python's `threading.  Its constructor takes keyword arguments `target`, `args`, and `kwargs`, and `name`, just like `Threads`'s constructor.  Note that the `group` argument is not supported.  A thread object `uth` has methods
+ * `uth.getName`
+ * `uth.setName`
+ * `uth.isAlive`
+that do exactly what you expect.  The `start` method begins execution of the thread, but does not return anything.  The `join` method blocks until the thread exits, and either returns its final value or raises an exception that was not caught in the thread (note: this might change - see issue 2).  Since it might block, `join` should be yielded:
+{{{
+	yield worker_thd.join()
+}}}
+
+Like `threading.Thread`, `uthreads.uThread` has a `run` method which can be overridden by subclasses, as an alternative to specifying a callable to the constructor.  Also parallel to `threading`, `uthreads,current_thread()` will return the current `uThread`.
+
+From twisted code, `uthreads.run` provides a convenient way to spawn a new microthread.  It takes a callable and arguments (much like `reactor.callLater`), and returns a deferred that will callback when the thread finishes.  For example:
+{{{
+from uthreads import run
+
+	def remote_crawl(self, url):
+		return run(follow_links, url, 3)
+}}}
+
+Note that `run` creates a new `uThreads` object, but hides it from the caller.  Conversely, `spawn` takes a generator, embeds it in a `uThread`, starts the thread, and returns it:
+{{{
+from uthreads import spawn
+	worker_thread = spawn(follow_links(url, 3))
+}}}
+ *The semantics of these two utility functions may change in an upcoming release - see issue 3*
+
+= Utilities =
+== Time ==
+The ubiquitous `sleep` method does exactly what you would expect:
+{{{
+from uthreads import sleep
+def countdown(n):
+	while n>0:
+		print n
+		yield sleep(1)
+		n = n - 1
+}}}
+
+A more advanced timer is available in `uthreads.timer`.  The `Timer` class can be set with a generator to call after a delay, and subsequently cancelled.  This is helpful for implementing timeouts:
+{{{
+from uthreads import timer
+	t = timer.Timer()
+	t.set(10, abort())
+	yield long_runing_calculation()
+	t.clear()
+}}}
+ This class may be modified to take a callable (so `t.set(10, abort)` instead of `t.set(10, abort())`) - see issue 4
+
+== Synchronization Primitives ==
+Python's `threading` provides access to a number of familiar primitives.  So does `uthreads.sync`.
+
+=== Lock ===
+A microthreaded lock acts just like you expect:
+{{{
+from uthreads import sync
+
+module_lock = sync.Lock()
+
+def operation():
+	# ...
+	# enter critical section
+	yield module_lock.acquire()
+	# ...
+	# leave critical section
+	yield module_lock.release()
+}}}
+
+=== Queue ===
+A `uthreads.sync.Queue` acts much like a `Queue.Queue`.  It can have a maximum size, specified as an optional argument to the constructor.  Its `get` and `put` methods are microthreaded, and will block until a value (for `get) or empty slot (for `put`) is available.  No-wait variants `get_nowait` and `put_nowait` raise `Empty` and `Full` exceptions where their counterparts would block.  The `qsize` method returns the number of elements currently in the queue.  Empty and full conditions are identified by the `empty` and `full` methods.
 
 = Interacting with Twisted =
 A µthreaded function may interact with Twisted in two ways: it may call functions which return `Deferred` objects, on which it wishes to block; and its caller may expect it to return a `Deferred` object.
