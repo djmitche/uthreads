@@ -36,7 +36,7 @@ Note that `run` creates a new `uThreads` object, but hides it from the caller.  
 from uthreads import spawn
 	worker_thread = spawn(follow_links(url, 3))
 }}}
- *The semantics of these two utility functions may change in an upcoming release - see issue 3*
+ The semantics of these two utility functions may change in an upcoming release - see issue 3
 
 = Utilities =
 == Time ==
