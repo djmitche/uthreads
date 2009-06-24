@@ -12,6 +12,7 @@ from twisted.internet.defer import Deferred
 from twisted.python import failure
 import datetime
 import uthreads
+import uthreads.sync
 
 def is_day_366():
     today = datetime.date.today() 
@@ -22,7 +23,7 @@ class ConnectionLost(Exception): pass
 
 class MyChat(basic.LineReceiver):
     def __init__(self):
-        self.lines = []
+        self.lines = uthreads.sync.Queue()
         self.line_deferred = None
 
     def connectionMade(self):
@@ -31,24 +32,11 @@ class MyChat(basic.LineReceiver):
 
     def connectionLost(self, reason):
         print "Lost a caller!"
-        if self.line_deferred:
-            self.line_deferred.errback(failure.Failure(ConnectionLost()))
+        self.lines.put_nowait('')
 
     def lineReceived(self, line):
         print "received", repr(line)
-        self.lines.append(line)
-        if self.line_deferred:
-            print "found line"
-            d = self.line_deferred
-            self.line_deferred = None
-            d.callback(self.lines.pop(0))
-
-    def getLine(self):
-        assert self.line_deferred is None, "multiple simultaneous getLine calls!"
-        if self.lines:
-            return self.lines.pop(0)
-        self.line_deferred = Deferred()
-        return self.line_deferred
+        self.lines.put_nowait(line)
 
     @uthreads.uthreaded
     def handleConnection(self):
@@ -59,6 +47,14 @@ class MyChat(basic.LineReceiver):
         finally:
             self.transport.loseConnection()
 
+    @uthreads.uthreaded
+    def getLine(self):
+        line = yield self.lines.get()
+        if line == '':
+            raise EOFError
+        raise StopIteration(line)
+
+    @uthreads.uthreaded
     def handleCall(self):
         self.transport.write(">> Hello, Thank you for contacting Zune technical support.\n")
         self.transport.write(">> Please enter your name.\n")
@@ -75,7 +71,7 @@ class MyChat(basic.LineReceiver):
         
         while True:
             self.transport.write(">> Have you tried hard-resetting your Zune?\n")
-            thatsnice = (self.getLine()).strip()
+            thatsnice = (yield self.getLine()).strip()
             if thatsnice == "OPERATOR!":
                 self.transport.write(">> have a nice day!\n")
                 return
